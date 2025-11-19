@@ -1,0 +1,38 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+src/*.egg-info/
+*.egg
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Editors
+.vscode/
+.idea/
+
+# Django specific
+*.log
+*.pot
+*.mo
+
+# OS generated files
+.DS_Store
+.Trashes
+thumbs.db

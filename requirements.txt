@@ -1,0 +1,10 @@
+django>=4.2,<5.2
+numpy
+pandas
+scikit-learn
+xgboost
+tldextract
+requests
+matplotlib
+seaborn
+joblib
