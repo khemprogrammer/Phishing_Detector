@@ -22,7 +22,7 @@ art_dir = base / "artifacts"
 plot_dir = base / "plots"
 art_dir.mkdir(parents=True, exist_ok=True)
 plot_dir.mkdir(parents=True, exist_ok=True)
-TRAIN_MODE = os.getenv("TRAIN_MODE", "full")
+TRAIN_MODE = os.getenv("TRAIN_MODE", "medium")
 
 def _normalize_url(u):
     if pd.isna(u):
@@ -130,7 +130,7 @@ def plot_cm(cm, name):
 def main():
     df = load_data()
     if TRAIN_MODE == "fast":
-        df = df.sample(n=min(len(df), 5000), random_state=42).reset_index(drop=True)
+        df = df.sample(n=min(len(df), 2000), random_state=42).reset_index(drop=True)
     elif TRAIN_MODE == "medium":
         df = df.sample(n=min(len(df), 25000), random_state=42).reset_index(drop=True)
     X_urls = df["url"].tolist()
@@ -140,14 +140,14 @@ def main():
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
     results = []
     if TRAIN_MODE == "fast":
-        rf = RandomForestClassifier(n_estimators=200, max_depth=None, min_samples_split=2, random_state=42, n_jobs=-1)
+        rf = RandomForestClassifier(n_estimators=120, max_depth=None, min_samples_split=2, random_state=42, n_jobs=-1)
         rf.fit(X_train, y_train)
         y_prob_rf = rf.predict_proba(X_test)[:,1]
         metrics_rf, cm_rf = evaluate(y_test, y_prob_rf)
         plot_roc(y_test, y_prob_rf, "RandomForest")
         plot_cm(cm_rf, "RandomForest")
         results.append({"name": "RandomForest", "metrics": metrics_rf, "estimator": rf})
-        xgb = XGBClassifier(n_estimators=150, max_depth=5, learning_rate=0.1, subsample=1.0, colsample_bytree=1.0, eval_metric="logloss", random_state=42, n_jobs=-1)
+        xgb = XGBClassifier(n_estimators=120, max_depth=5, learning_rate=0.1, subsample=0.8, colsample_bytree=0.8, eval_metric="logloss", random_state=42, n_jobs=-1, tree_method="hist")
         xgb.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
         y_prob_xgb = xgb.predict_proba(X_test)[:,1]
         metrics_xgb, cm_xgb = evaluate(y_test, y_prob_xgb)
@@ -190,27 +190,31 @@ def main():
             plot_roc(y_test, y_prob, name)
             plot_cm(cm, name)
             results.append({"name": name, "metrics": metrics, "estimator": best})
-    try:
-        from tensorflow.keras import Sequential
-        from tensorflow.keras.layers import Dense, Dropout
-        from tensorflow.keras.callbacks import EarlyStopping
-        dl = Sequential()
-        dl.add(Dense(64, activation="relu", input_shape=(X_train.shape[1],)))
-        dl.add(Dropout(0.3))
-        dl.add(Dense(32, activation="relu"))
-        dl.add(Dropout(0.2))
-        dl.add(Dense(1, activation="sigmoid"))
-        dl.compile(optimizer="adam", loss="binary_crossentropy", metrics=["AUC"])
-        es = EarlyStopping(monitor="val_AUC", mode="max", patience=5, restore_best_weights=True)
-        epochs = 20 if TRAIN_MODE == "fast" else (15 if TRAIN_MODE == "medium" else 50)
-        dl.fit(X_train, y_train, validation_split=0.2, epochs=epochs, batch_size=64, callbacks=[es], verbose=0)
-        y_prob_dl = dl.predict(X_test, verbose=0).ravel()
-        metrics_dl, cm_dl = evaluate(y_test, y_prob_dl)
-        plot_roc(y_test, y_prob_dl, "DeepNN")
-        plot_cm(cm_dl, "DeepNN")
-        results.append({"name": "DeepNN", "metrics": metrics_dl, "estimator": dl})
-    except Exception:
-        pass
+    if TRAIN_MODE != "fast":
+        try:
+            os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+            from tensorflow.keras import Sequential
+            from tensorflow.keras.layers import Dense, Dropout, Input
+            from tensorflow.keras.callbacks import EarlyStopping
+            dl = Sequential([
+                Input(shape=(X_train.shape[1],)),
+                Dense(64, activation="relu"),
+                Dropout(0.3),
+                Dense(32, activation="relu"),
+                Dropout(0.2),
+                Dense(1, activation="sigmoid")
+            ])
+            dl.compile(optimizer="adam", loss="binary_crossentropy", metrics=["AUC"])
+            es = EarlyStopping(monitor="val_AUC", mode="max", patience=5, restore_best_weights=True)
+            epochs = 15 if TRAIN_MODE == "medium" else 50
+            dl.fit(X_train, y_train, validation_split=0.2, epochs=epochs, batch_size=64, callbacks=[es], verbose=0)
+            y_prob_dl = dl.predict(X_test, verbose=0).ravel()
+            metrics_dl, cm_dl = evaluate(y_test, y_prob_dl)
+            plot_roc(y_test, y_prob_dl, "DeepNN")
+            plot_cm(cm_dl, "DeepNN")
+            results.append({"name": "DeepNN", "metrics": metrics_dl, "estimator": dl})
+        except Exception:
+            pass
     from joblib import dump
     dump(fe, art_dir / "feature_extractor.pkl")
     best_item = max(results, key=lambda r: r["metrics"]["roc_auc"])
